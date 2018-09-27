@@ -1,0 +1,135 @@
+#! /bin/bash
+set -x
+### BEGIN INIT INFO
+# Provides:          honeyPot
+# Should-Start:      
+# Required-Start:    $local_fs 
+# Required-Stop:     $local_fs $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: honey pot for various services
+# Description:       Debian init script for the HoneyPot
+### END INIT INFO
+
+###Vars /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+logfile='honeyPi.log'
+logfolder='/var/log/honeyPi'
+logFile='$logfolder/$logfile'
+honeyPATH=''
+###Funcs ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+log_chk(){ 
+	if [ ! -e $logfolder ];then
+		mkdir $logfolder -m 775
+			if [ ! -e $logfile ];then
+				touch $logfile
+			fi
+	fi
+	}
+
+honey_start(){ 
+	export PATH=$PATH:/opt/dionaea/bin
+		apacheSts=`/etc/init.d/apache2 status >> /dev/null ;echo $?`
+			if [ "$apacheSts" == "0" ];then
+				/opt/glastopfi/glastopf-runner >> $logfolder/glastopf.log
+				dionaea -l all,debug -r /opt/dionaea -w /opt/dionaea -p /opt/dionaea/var/dionaea.pid
+				python /opt/ragpicker/ragpicker.py -t 5 --log-filename=$logfolder/ragpicker.log
+				/opt/honssh/honsshctrl START >> $logfolder/honssh.log
+				if [[ -x /opt/kippo-read-only/start.sh ]];then
+					/opt/kippo-read-only/start.sh >> $logfolder/kippo.log
+				else 
+					chmod +x /opt/kippo-read-only/start.sh
+					/opt/kippo-read-only/start.sh  >> $logfolder/kippo.log
+				fi
+			else
+				#echo "apache dependencies - please start apache: systemctl start apache2.service"
+				#exit 1
+				service apache2 restart 
+				if [ "`echo $?`" == "0" ];then 
+					echo "apache started--> Running the honeyPot"
+				elif [ "`echo $?`" != "0" ];then
+					echo " check apache"
+					exit 1
+				else
+					echo "some error accured  - try to debug the log files"
+				fi
+				
+			fi
+	}
+
+honey_stop(){
+		sts_glastopf=`ps aux |grep -v grep |grep glastopf >> /dev/null;echo $?`
+		sts_dionaea=`ps aux |grep -v grep| grep dionaea >> /dev/null;echo $?`
+		sts_ragpicker=`ps aux|grep -v grep| grep ragpicker >> /dev/null;echo $?`
+		sts_honssh=`ps aux |grep -v grep|grep honssh >> /dev/null; echo $?`
+		sts_kippo=`ps aux|grep -v grep|grep kippo >>/dev/null ;echo $?`
+		
+		if [ "$sts_glastopf" == "0" ];then
+			killall glastopf 
+		fi
+		if [ "$sts_dionaea" == "0" ];then
+			killall dionaea
+		fi
+		if [ "$sts_ragpicker" == "0" ];then
+			killall  ragpicker
+		fi
+		if [ "$sts_honssh" == "0" ];then
+			killall honssh
+		fi
+		if [ "$sts_kippo" == "0" ];then
+			killall kippo
+		fi
+	
+	}
+
+honey_restart(){
+	echo " Restarting HoneyPi"
+	honey_stop
+		
+	honey_start
+	}
+
+honey_status(){
+		sts_glastopf=`ps aux |grep -v grep|grep glastopf >> /dev/null;echo $?`
+		sts_dionaea=`ps aux |grep -v grep| grep dionaea >> /dev/null;echo $?`
+		sts_ragpicker=`ps aux|grep -v grep| grep ragpicker >> /dev/null;echo $?`
+		sts_honssh=`ps aux |grep -v grep|grep honssh >> /dev/null; echo $?`
+		sts_kippo=`ps aux|grep -v grep|grep kippo >>/dev/null ;echo $?`
+		
+		if [[ "$sts_glastopf" == "0" ]];then
+			echo " glastopf is running "
+		else 
+			echo "glastopf is Down"
+		fi
+		if [[ "$sts_dionaea" == "0" ]];then
+			echo "dionaea is running "
+		else 
+			echo ""
+		fi
+		if [[ "$sts_ragpicker" == "0" ]];then
+			echo " ragpicker is running"
+		else 
+			echo " ragpicker is Down"
+		fi
+		if [[ "$sts_honssh" == "0" ]];then
+			echo " honssh is running"
+		else
+			echo "honssh is Down"
+		fi
+		if [[ "$sts_kippo" == "0" ]];then
+			echo " kippo is running"
+		else 
+			echo "kippo is Down"
+		fi
+	}
+	
+###
+#Main- _ - _ - _ - _ - _ - _ -_ - _ - _ - _ - _ - _ - _ - _ - _ - _ - _ -
+###
+ log_chk
+	case "$1" in
+		start	) echo " starting the honeyPI";honey_start  ;;
+		stop	) echo " stopping the honeyPI";honey_stop   ;;
+		status	) honey_status ;;
+		restart	) honey_stop;honey_start;;
+		*) " Error $1 unknown options --> Usage: init_honeyPi [start|stop|status]" ;;
+	esac
